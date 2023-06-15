@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simak-demo-web
+  namespace: 'default'
+  labels:
+    app: simak.web
+    environment: demo
+spec:
+  template: 
+    metadata:
+      name: simak-web-pod
+      labels:
+        app: simak-web # The app label is used to identify the application that the pod is running,
+        environment: demo # while the "environment" label is used to identify the environment where the application is running
+    spec:
+      containers:
+        - name: simak-web
+          image: ACRdemoregistryforaks.azurecr.io/simak-demo-web
+          #env:
+          #  - name: AZURE_CLIENT_ID        # AZURE_CLIENT_ID environment variable is likely used to authenticate the container with an Azure service or resource.
+          #    # Go to Azure portal > Managed Identities, copy Client ID and paste here
+          #    value: "32f0d4d5-ab21-48be-9f39-7d3d708d0979"
+
+          ports:
+          - containerPort: 80 #    The ports section specifies the port that the container should listen on
+          readinessProbe:
+            httpGet: # httpGet field specifies the HTTP GET request that Kubernetes will use to check if the container is ready to serve traffic.
+              path: /Home/Index    # The path field specifies the endpoint that Kubernetes will send the HTTP GET request to. In this case, it is set to /Home/Index
+              port: 80
+            periodSeconds: 3 # The periodSeconds and timeoutSeconds parameters specify the frequency and timeout for the probe.
+            timeoutSeconds: 1
+      #    volumeMounts:
+      #      - name: azure
+      #        mountPath: /app/Logs
+      #volumes:
+      #  - name: azure
+      #    csi:
+      #      driver: file.csi.azure.com       # A Container Storage Interface (CSI) driver is a plugin that extends the Kubernetes Container Runtime Interface 
+      #      readOnly: false                  # The readOnlyfield is set to false which means that the container can write to the volume
+      #      volumeAttributes:
+      #        secretName: azure-secret  # required
+      #        shareName: demo-web-logs  # required
+      #        mountOptions: "dir_mode=0777,file_mode=0777,cache=strict,actimeo=30"  # optional        # The mountOptionsfield specifies additional options for mounting the volume, such as file and directory permissions and caching settings.
+
+  replicas: 1
+  selector:
+    matchLabels: 
+      app: simak-web
+      environment: demo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: simak-demo-web
+  namespace: 'default'
+spec:
+  selector: 
+    app: simak-web   # The selector field specifies a label selector that is used to match the pods that should be included in the service. In this case, the label selector is set to app: simak-web which means that only pods with the label app: simak-web will be included in the service           
+  ports: 
+    - protocol: TCP
+      port: 80
+      targetPort: 80    #  The targetPort field specifies the port that the pods should be listening on, which is also port 80.
+  type: LoadBalancer    #  The type field specifies the type of service that should be created. In this case, it is set to LoadBalancer which means that a load balancer will be created to distribute traffic to the pods behind the service.
