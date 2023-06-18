@@ -31,3 +31,5 @@ namespace KeyVaultDemo.Configurations
         }
     }
 }
+
+# used to read config values from my project 
