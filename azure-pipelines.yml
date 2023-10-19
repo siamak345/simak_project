@@ -1,0 +1,116 @@
+# The trigger section specifies the conditions under which the pipeline should be triggered. 
+# In this case, the pipeline will only be triggered when changes are made to the main branch and only when files in the KeyVaultDemo directory are changed.
+# The branches section specifies the branches that should trigger the pipeline. In this case, only the main branch will trigger the pipeline.
+# The paths section specifies the files or directories that should trigger the pipeline. In this case, only files in the KeyVaultDemo directory will trigger the pipeline.
+trigger:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - 'KeyVaultDemo'
+
+# no PR triggers
+pr: none
+
+# This is a YAML configuration file that specifies the settings
+# for a pool of virtual machines (VMs) that will be used to run a build or deployment process7
+# The pool keyword is used to define the properties of the pool, such as the type of VM image to use
+pool:
+  vmImage: 'ubuntu-latest'
+
+
+# The job is named "BuildAndPublish" and it contains a single step that runs a Bash script. 
+# The script is named "Apply config changes from ffdemo" and it is defined using the "Bash@3" task.
+# The task takes input from the user, which is specified in the "inputs" section of the task. In this case, the input is an inline script that is executed on the agent. 
+# The script is not stored in a separate file, but is defined directly in the YAML configuration file.
+# The targetType option is used to specify whether the function or method call should be executed in the current window or in a new inline window. The default value for targetType is 'window', which means that the function or method call will be executed in a new window or tab.
+# However, if targetType is set to 'inline', the function or method call will be executed in the current window, rather than in a new window or tab.
+# This can be useful in situations where you want to display the results of a function or method call directly in the same window, rather than in a new window or tab.
+stages:
+- stage: Build
+  jobs:
+    - job: 'BuildAndPublish'
+      steps:
+        - task: Bash@3
+          displayName: 'Apply config changes from ffdemo'
+          inputs:
+            targetType: 'inline'
+            # script: |
+            #   $PWD
+            #   cd KeyVaultDemo
+            #   #cat Web.config
+  
+# The purpose of this task is to add credentials for a NuGet feed to an environment variable. The credentials are typically used to authenticate with the NuGet feed and download packages or packages dependencies
+        - task: NuGetAuthenticate@1
+          displayName: 'Add nuget feed credentials to environment variable'
+
+#The inputs of the task include the container registry to use, the name of the repository to create, the command to execute (build), the Dockerfile to use, the build context, and the tags to apply to the image. 
+# In this case, the build ID and "latest" tag are applied.
+        - task: Docker@2
+          displayName: 'Build Docker image'
+          inputs:
+            containerRegistry: 'demo container registry'
+            repository: 'simak-demo-web'
+            command: 'build'
+            Dockerfile: 'KeyVaultDemo/Dockerfile'
+            buildContext: '.' # The build context can be specified using a path to a directory on your local machine. In this case, the '.' represents the current directory. This is a common way to specify the build context, as it allows you to easily include any necessary files or directories in the build process.
+            tags: |
+              $(Build.BuildId)
+              latest
+            arguments: '--build-arg     FEED_ACCESSTOKEN=$(VSS_NUGET_ACCESSTOKEN)' # In other words, the build script or tool is using the value of VSS_NUGET_ACCESSTOKEN as an access token for a NuGet feed, and the resulting value is being passed to the build script or tool as the value of FEED_ACCESSTOKEN. 
+            # This allows the build script or tool to authenticate with the NuGet feed using the access token, which is necessary for it to access the packages that are hosted on the feed.
+            addPipelineData: false     # In the context of a pipeline, this means that additional data may be added to the pipeline, such as logs, error messages, or other diagnostic information.
+            addBaseImageData: false    # If "addBaseImageData" is set to "true", it means that the base image data will be added to the new image file.
+
+        - task: Docker@2
+          displayName: 'Push image to repository'
+          inputs:
+            containerRegistry: 'demo container registry'
+            repository: 'simak-demo-web'
+            command: 'push' # The push command takes the Docker image that was built in the previous task and pushes it to the specified container registry. This allows the image to be deployed to a Kubernetes cluster or another Docker environment.
+            tags: |
+              $(Build.BuildId)
+              latest
+ 
+- stage: Deploy
+  jobs:
+    - deployment: demo_Web
+      displayName: 'Deploy webapp to demo environment'
+      environment: 'ff-prod'            
+      strategy:     # The strategy keyword specifies the deployment strategy to be used for this job. In this case, the runOnce strategy is used, which means that the job will only be executed once.
+        runOnce:
+          deploy:    # The deploy keyword specifies the list of steps that will be executed as part of the deployment. 
+            steps:
+
+              - checkout: self    # checkout step that checks out the source code from the current repository.
+
+
+
+              - task: Kubernetes@1
+                displayName: "Execute deployment script and execute image"
+                inputs:
+                  connectionType: 'Kubernetes Service Connection' # connectionType: 'Kubernetes Service Connection': This specifies the type of connection to be used to connect to the Kubernetes cluster. In this case, it is a Kubernetes service connection.
+                  kubernetesServiceEndpoint: 'demo Demo K8s cluster (Admin)' # This specifies the name of the Kubernetes service connection to be used.
+                  namespace: 'default' 
+                  command: 'apply'
+                  arguments: '-f "Kubernetes/Scripts/aks-web.yaml"' # This specifies the arguments to be passed to the command. In this case, it is the path to a Kubernetes deployment script named "aks-web.yaml"
+                  secretType: 'dockerRegistry' # This specifies the type of secret to be used for authentication with the Docker registry. A Docker registry secret is a Kubernetes secret that contains authentication information for a Docker registry. # It is used to authenticate the Kubernetes deployment task with the Docker registry so that it can pull the Docker image specified in the deployment script.
+                  containerRegistryType: 'Azure Container Registry' # This specifies the type of container registry to be used.
+                  versionSpec: '1.23.12'
+              
+          
+
+              - task: Kubernetes@1
+                inputs:
+                  connectionType: 'Kubernetes Service Connection'
+                  kubernetesServiceEndpoint: 'demo Demo K8s cluster (Admin)'
+                  namespace: 'default'
+                  command: 'set' # The set command is used to update an existing resource on the Kubernetes cluster. In this case, the resource being updated is a deployment, and the set command is used to update the image for that deployment.
+                  arguments: 'image deployment.apps/simak-demo-web simak-web=ACRdemoregistryforaks.azurecr.io/simak-demo-web:$(Build.BuildId)' #  it is to set the image for the simak-demo-web deployment to ACRdemoregistryforaks.azurecr.io/simak-demo-web:$(Build.BuildId)
+                  secretType: 'dockerRegistry'
+                  containerRegistryType: 'Azure Container Registry'
+                  versionSpec: '1.23.12'
+
+
+
